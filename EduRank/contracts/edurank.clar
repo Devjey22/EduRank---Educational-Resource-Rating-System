@@ -182,3 +182,87 @@
             (merge resource { view-count: (+ (get view-count resource) u1) })))
     )
 )
+
+;; Mark review as helpful
+;; #[allow(unchecked_data)]
+(define-public (mark-helpful (review-id uint))
+    (let
+        (
+            (review (unwrap! (map-get? reviews review-id) err-not-found))
+            (existing-vote (map-get? review-helpfulness { user: tx-sender, review-id: review-id }))
+            (reviewer-rep (default-to { total-reviews: u0, total-helpful-marks: u0, reputation-score: u0, badge-level: u0, resources-created: u0 }
+                                       (map-get? user-reputation (get reviewer review))))
+        )
+        (asserts! (is-none existing-vote) err-already-voted)
+        
+        (map-set reviews review-id 
+            (merge review { helpful-count: (+ (get helpful-count review) u1) }))
+        
+        (map-set review-helpfulness { user: tx-sender, review-id: review-id } { is-helpful: true })
+        
+        (map-set user-reputation (get reviewer review)
+            (merge reviewer-rep { 
+                total-helpful-marks: (+ (get total-helpful-marks reviewer-rep) u1),
+                reputation-score: (+ (get reputation-score reviewer-rep) u5)
+            }))
+        
+        (ok true)
+    )
+)
+
+;; Mark review as unhelpful
+;; #[allow(unchecked_data)]
+(define-public (mark-unhelpful (review-id uint))
+    (let
+        (
+            (review (unwrap! (map-get? reviews review-id) err-not-found))
+            (existing-vote (map-get? review-helpfulness { user: tx-sender, review-id: review-id }))
+        )
+        (asserts! (is-none existing-vote) err-already-voted)
+        
+        (map-set reviews review-id 
+            (merge review { unhelpful-count: (+ (get unhelpful-count review) u1) }))
+        
+        (map-set review-helpfulness { user: tx-sender, review-id: review-id } { is-helpful: false })
+        
+        (ok true)
+    )
+)
+
+;; Upvote a resource
+;; #[allow(unchecked_data)]
+(define-public (upvote-resource (resource-id uint))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+            (existing-vote (map-get? resource-votes { user: tx-sender, resource-id: resource-id }))
+        )
+        (asserts! (is-none existing-vote) err-already-voted)
+        
+        (map-set resources resource-id 
+            (merge resource { upvotes: (+ (get upvotes resource) u1) }))
+        
+        (map-set resource-votes { user: tx-sender, resource-id: resource-id } { vote-type: "upvote" })
+        
+        (ok true)
+    )
+)
+
+;; Downvote a resource
+;; #[allow(unchecked_data)]
+(define-public (downvote-resource (resource-id uint))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+            (existing-vote (map-get? resource-votes { user: tx-sender, resource-id: resource-id }))
+        )
+        (asserts! (is-none existing-vote) err-already-voted)
+        
+        (map-set resources resource-id 
+            (merge resource { downvotes: (+ (get downvotes resource) u1) }))
+        
+        (map-set resource-votes { user: tx-sender, resource-id: resource-id } { vote-type: "downvote" })
+        
+        (ok true)
+    )
+)
