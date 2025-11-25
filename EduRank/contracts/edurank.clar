@@ -266,3 +266,151 @@
         (ok true)
     )
 )
+
+;; Flag a resource for moderation
+;; #[allow(unchecked_data)]
+(define-public (flag-resource (resource-id uint))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+            (user-rep (default-to { total-reviews: u0, total-helpful-marks: u0, reputation-score: u0, badge-level: u0, resources-created: u0 }
+                                   (map-get? user-reputation tx-sender)))
+        )
+        (asserts! (>= (get reputation-score user-rep) u50) err-insufficient-reputation)
+        
+        (ok (map-set resources resource-id 
+            (merge resource { is-flagged: true })))
+    )
+)
+
+;; Unflag a resource (moderator only)
+;; #[allow(unchecked_data)]
+(define-public (unflag-resource (resource-id uint))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+            (is-mod (default-to false (map-get? moderators tx-sender)))
+        )
+        (asserts! (or is-mod (is-eq tx-sender contract-owner)) err-unauthorized)
+        
+        (ok (map-set resources resource-id 
+            (merge resource { is-flagged: false })))
+    )
+)
+
+;; Add moderator (contract owner only)
+;; #[allow(unchecked_data)]
+(define-public (add-moderator (moderator principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+        (ok (map-set moderators moderator true))
+    )
+)
+
+;; Remove moderator (contract owner only)
+;; #[allow(unchecked_data)]
+(define-public (remove-moderator (moderator principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+        (ok (map-delete moderators moderator))
+    )
+)
+
+;; Verify a review (moderator only)
+;; #[allow(unchecked_data)]
+(define-public (verify-review (review-id uint))
+    (let
+        (
+            (review (unwrap! (map-get? reviews review-id) err-not-found))
+            (is-mod (default-to false (map-get? moderators tx-sender)))
+            (reviewer-rep (default-to { total-reviews: u0, total-helpful-marks: u0, reputation-score: u0, badge-level: u0, resources-created: u0 }
+                                       (map-get? user-reputation (get reviewer review))))
+        )
+        (asserts! (or is-mod (is-eq tx-sender contract-owner)) err-unauthorized)
+        
+        (map-set reviews review-id 
+            (merge review { is-verified: true }))
+        
+        (map-set user-reputation (get reviewer review)
+            (merge reviewer-rep { reputation-score: (+ (get reputation-score reviewer-rep) u20) }))
+        
+        (ok true)
+    )
+)
+
+;; Update user badge level based on reputation
+;; #[allow(unchecked_data)]
+(define-public (update-badge-level (user principal))
+    (let
+        (
+            (user-rep (unwrap! (map-get? user-reputation user) err-not-found))
+            (new-badge-level (calculate-badge-level (get reputation-score user-rep)))
+        )
+        (ok (map-set user-reputation user 
+            (merge user-rep { badge-level: new-badge-level })))
+    )
+)
+
+;; Create a new category
+;; #[allow(unchecked_data)]
+(define-public (create-category (name (string-ascii 50)) (description (string-ascii 256)))
+    (let
+        (
+            (category-id (var-get category-nonce))
+        )
+        (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+        
+        (map-set categories category-id {
+            name: name,
+            description: description,
+            resource-count: u0
+        })
+        
+        (var-set category-nonce (+ category-id u1))
+        (ok category-id)
+    )
+)
+
+;; Update resource category
+;; #[allow(unchecked_data)]
+(define-public (update-resource-category (resource-id uint) (new-category (string-ascii 50)))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+        )
+        (asserts! (is-eq tx-sender (get creator resource)) err-unauthorized)
+        
+        (ok (map-set resources resource-id 
+            (merge resource { category: new-category })))
+    )
+)
+
+;; Delete a resource (creator or moderator only)
+;; #[allow(unchecked_data)]
+(define-public (delete-resource (resource-id uint))
+    (let
+        (
+            (resource (unwrap! (map-get? resources resource-id) err-not-found))
+            (is-mod (default-to false (map-get? moderators tx-sender)))
+        )
+        (asserts! (or (is-eq tx-sender (get creator resource)) is-mod (is-eq tx-sender contract-owner)) err-unauthorized)
+        
+        (ok (map-delete resources resource-id))
+    )
+)
+
+;; Award reputation points manually (moderator only)
+;; #[allow(unchecked_data)]
+(define-public (award-reputation (user principal) (points uint))
+    (let
+        (
+            (user-rep (default-to { total-reviews: u0, total-helpful-marks: u0, reputation-score: u0, badge-level: u0, resources-created: u0 }
+                                   (map-get? user-reputation user)))
+            (is-mod (default-to false (map-get? moderators tx-sender)))
+        )
+        (asserts! (or is-mod (is-eq tx-sender contract-owner)) err-unauthorized)
+        
+        (ok (map-set user-reputation user 
+            (merge user-rep { reputation-score: (+ (get reputation-score user-rep) points) })))
+    )
+)
