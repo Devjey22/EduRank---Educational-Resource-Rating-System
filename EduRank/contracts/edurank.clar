@@ -45,3 +45,51 @@
         timestamp: uint,
         helpful-count: uint,
         unhelpful-count: uint,
+        is-verified: bool
+    }
+)
+
+(define-map user-reviews
+    { user: principal, resource-id: uint }
+    uint
+)
+
+(define-map resource-reviews
+    uint
+    (list 200 uint)
+)
+
+(define-map user-reputation
+    principal
+    {
+        total-reviews: uint,
+        total-helpful-marks: uint,
+        reputation-score: uint,
+        badge-level: uint,
+        resources-created: uint
+    }
+)
+
+(define-map resource-votes
+    { user: principal, resource-id: uint }
+    { vote-type: (string-ascii 10) }
+)
+
+(define-map review-helpfulness
+    { user: principal, review-id: uint }
+    { is-helpful: bool }
+)
+
+(define-map categories
+    uint
+    {
+        name: (string-ascii 50),
+        description: (string-ascii 256),
+        resource-count: uint
+    }
+)
+
+(define-map moderators
+    principal
+    bool
+)
