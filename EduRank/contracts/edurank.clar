@@ -414,3 +414,320 @@
             (merge user-rep { reputation-score: (+ (get reputation-score user-rep) points) })))
     )
 )
+
+;; Read-only Functions
+
+;; Get resource details
+(define-read-only (get-resource (resource-id uint))
+    (map-get? resources resource-id)
+)
+
+;; Get average rating for a resource
+(define-read-only (get-average-rating (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource 
+            (if (> (get total-reviews resource) u0)
+                (ok (/ (get total-rating resource) (get total-reviews resource)))
+                (ok u0))
+        err-not-found
+    )
+)
+
+;; Get review details
+(define-read-only (get-review (review-id uint))
+    (map-get? reviews review-id)
+)
+
+;; Get all reviews for a resource
+(define-read-only (get-resource-reviews (resource-id uint))
+    (default-to (list) (map-get? resource-reviews resource-id))
+)
+
+;; Check if user has reviewed resource
+(define-read-only (has-user-reviewed (user principal) (resource-id uint))
+    (is-some (map-get? user-reviews { user: user, resource-id: resource-id }))
+)
+
+;; Get total resource count
+(define-read-only (get-resource-count)
+    (ok (var-get resource-nonce))
+)
+
+;; Get total review count
+(define-read-only (get-review-count)
+    (ok (var-get review-nonce))
+)
+
+;; Get user reputation
+(define-read-only (get-user-reputation (user principal))
+    (map-get? user-reputation user)
+)
+
+;; Get user's review for specific resource
+(define-read-only (get-user-review-id (user principal) (resource-id uint))
+    (map-get? user-reviews { user: user, resource-id: resource-id })
+)
+
+;; Check if user is moderator
+(define-read-only (is-moderator (user principal))
+    (default-to false (map-get? moderators user))
+)
+
+;; Get category details
+(define-read-only (get-category (category-id uint))
+    (map-get? categories category-id)
+)
+
+;; Get total category count
+(define-read-only (get-category-count)
+    (ok (var-get category-nonce))
+)
+
+;; Get resource vote by user
+(define-read-only (get-user-vote (user principal) (resource-id uint))
+    (map-get? resource-votes { user: user, resource-id: resource-id })
+)
+
+;; Get review helpfulness vote by user
+(define-read-only (get-review-vote (user principal) (review-id uint))
+    (map-get? review-helpfulness { user: user, review-id: review-id })
+)
+
+;; Calculate reputation score for a resource
+(define-read-only (get-resource-reputation (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (let
+                (
+                    (avg-rating (if (> (get total-reviews resource) u0)
+                                    (/ (get total-rating resource) (get total-reviews resource))
+                                    u0))
+                    (vote-score (- (get upvotes resource) (get downvotes resource)))
+                )
+                (ok (+ (* avg-rating u20) vote-score))
+            )
+        err-not-found
+    )
+)
+
+;; Get detailed resource stats
+(define-read-only (get-resource-stats (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok {
+                total-reviews: (get total-reviews resource),
+                average-rating: (if (> (get total-reviews resource) u0)
+                                    (/ (get total-rating resource) (get total-reviews resource))
+                                    u0),
+                upvotes: (get upvotes resource),
+                downvotes: (get downvotes resource),
+                view-count: (get view-count resource),
+                is-flagged: (get is-flagged resource)
+            })
+        err-not-found
+    )
+)
+
+;; Check if resource is highly rated
+(define-read-only (is-highly-rated (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok (and 
+                (>= (get total-reviews resource) u5)
+                (>= (/ (get total-rating resource) (get total-reviews resource)) u4)))
+        err-not-found
+    )
+)
+
+;; Get user's total contribution score
+(define-read-only (get-user-contribution-score (user principal))
+    (match (map-get? user-reputation user)
+        user-rep
+            (ok (+ 
+                (* (get total-reviews user-rep) u10)
+                (* (get total-helpful-marks user-rep) u5)
+                (* (get resources-created user-rep) u15)))
+        (ok u0)
+    )
+)
+
+;; Check if user can moderate (has high reputation or is moderator)
+(define-read-only (can-moderate (user principal))
+    (let
+        (
+            (is-mod (default-to false (map-get? moderators user)))
+            (user-rep (default-to { total-reviews: u0, total-helpful-marks: u0, reputation-score: u0, badge-level: u0, resources-created: u0 }
+                                   (map-get? user-reputation user)))
+        )
+        (ok (or is-mod (>= (get reputation-score user-rep) u100)))
+    )
+)
+
+;; Get review helpfulness ratio
+(define-read-only (get-review-helpfulness-ratio (review-id uint))
+    (match (map-get? reviews review-id)
+        review
+            (let
+                (
+                    (total-votes (+ (get helpful-count review) (get unhelpful-count review)))
+                )
+                (if (> total-votes u0)
+                    (ok (/ (* (get helpful-count review) u100) total-votes))
+                    (ok u0))
+            )
+        err-not-found
+    )
+)
+
+;; Calculate badge level from reputation score
+(define-read-only (calculate-badge-level (reputation uint))
+    (if (>= reputation u1000)
+        u5
+        (if (>= reputation u500)
+            u4
+            (if (>= reputation u200)
+                u3
+                (if (>= reputation u50)
+                    u2
+                    u1))))
+)
+
+;; Get user badge name
+(define-read-only (get-badge-name (badge-level uint))
+    (if (is-eq badge-level u5)
+        (ok "Master Educator")
+        (if (is-eq badge-level u4)
+            (ok "Expert Contributor")
+            (if (is-eq badge-level u3)
+                (ok "Advanced Reviewer")
+                (if (is-eq badge-level u2)
+                    (ok "Active Member")
+                    (ok "Newcomer")))))
+)
+
+;; Check if resource has minimum reviews
+(define-read-only (has-minimum-reviews (resource-id uint) (minimum uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok (>= (get total-reviews resource) minimum))
+        err-not-found
+    )
+)
+
+;; Get resource age in blocks
+(define-read-only (get-resource-age (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok (- stacks-block-height (get created-at resource)))
+        err-not-found
+    )
+)
+
+;; Get review age in blocks
+(define-read-only (get-review-age (review-id uint))
+    (match (map-get? reviews review-id)
+        review
+            (ok (- stacks-block-height (get timestamp review)))
+        err-not-found
+    )
+)
+
+;; Check if review is recent (within 1000 blocks)
+(define-read-only (is-review-recent (review-id uint))
+    (match (map-get? reviews review-id)
+        review
+            (ok (< (- stacks-block-height (get timestamp review)) u1000))
+        err-not-found
+    )
+)
+
+;; Get net votes for a resource
+(define-read-only (get-net-votes (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok (- (get upvotes resource) (get downvotes resource)))
+        err-not-found
+    )
+)
+
+;; Calculate resource popularity score
+(define-read-only (get-popularity-score (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (let
+                (
+                    (avg-rating (if (> (get total-reviews resource) u0)
+                                    (/ (get total-rating resource) (get total-reviews resource))
+                                    u0))
+                    (net-votes (- (get upvotes resource) (get downvotes resource)))
+                    (review-weight (* (get total-reviews resource) u10))
+                    (view-weight (/ (get view-count resource) u10))
+                )
+                (ok (+ (* avg-rating u25) (* net-votes u15) review-weight view-weight))
+            )
+        err-not-found
+    )
+)
+
+;; Check if user has voted on resource
+(define-read-only (has-user-voted (user principal) (resource-id uint))
+    (is-some (map-get? resource-votes { user: user, resource-id: resource-id }))
+)
+
+;; Check if user has voted on review helpfulness
+(define-read-only (has-voted-on-review (user principal) (review-id uint))
+    (is-some (map-get? review-helpfulness { user: user, review-id: review-id }))
+)
+
+;; Get user's total reviews count
+(define-read-only (get-user-review-count (user principal))
+    (match (map-get? user-reputation user)
+        user-rep
+            (ok (get total-reviews user-rep))
+        (ok u0)
+    )
+)
+
+;; Get user's total resources count
+(define-read-only (get-user-resource-count (user principal))
+    (match (map-get? user-reputation user)
+        user-rep
+            (ok (get resources-created user-rep))
+        (ok u0)
+    )
+)
+
+;; Check if resource creator matches
+(define-read-only (is-resource-creator (user principal) (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (ok (is-eq user (get creator resource)))
+        err-not-found
+    )
+)
+
+;; Check if review author matches
+(define-read-only (is-review-author (user principal) (review-id uint))
+    (match (map-get? reviews review-id)
+        review
+            (ok (is-eq user (get reviewer review)))
+        err-not-found
+    )
+)
+
+;; Get weighted rating (considers helpful votes)
+(define-read-only (get-weighted-average (resource-id uint))
+    (match (map-get? resources resource-id)
+        resource
+            (if (> (get total-reviews resource) u0)
+                (let
+                    (
+                        (base-avg (/ (get total-rating resource) (get total-reviews resource)))
+                        (review-weight (if (>= (get total-reviews resource) u10) u5 u0))
+                    )
+                    (ok (+ base-avg review-weight))
+                )
+                (ok u0))
+        err-not-found
+    )
+)
